@@ -1,6 +1,6 @@
 # async_job
 
-A simple trait that allows you to attach cron jobs to anything in Rust.
+A simple trait for async cron jobs in Rust.
 
 ## Getting Started
 
@@ -24,6 +24,13 @@ impl Job for ExampleJob {
     }
 }
 ```
+
+If you need to use a single threaded env disable the default feature and set the feature `rt`,
+
+## Feature Flags
+
+1. `rt`: Single threaded tokio runtime.
+1. `rt-multi-thread`: Multi threaded tokio runtime. Enabled by default
 
 ## Examples
 

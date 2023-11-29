@@ -1,7 +1,7 @@
 //! # async_job: a simple async cron runner
 //!
 //! Use the `Job` trait to create your cron job struct, pass it to the `Runner` and then start it via `run()` method.
-//! Runner will spawn new thread where it will start looping through the jobs and will run their handle
+//! Runner will spawn new async task where it will start looping through the jobs and will run their handle
 //! method once the scheduled time is reached.
 //!
 //! If your OS has enough threads to spare each job will get its own thread to execute, if not it will be
@@ -12,8 +12,7 @@
 //! ## Example
 //! ```
 //! use async_job::{Job, Runner, Schedule, async_trait};
-//! use std::thread;
-//! use std::time::Duration;
+//! use tokio::time::Duration;
 //! use tokio;
 //! 
 //! struct ExampleJob;
@@ -36,7 +35,7 @@
 //!
 //!     println!("Starting the Runner for 20 seconds");
 //!     runner = runner.run().await;
-//!     thread::sleep(Duration::from_millis(20 * 1000));
+//!     tokio::time::sleep(Duration::from_millis(20 * 1000)).await;
 //!
 //!     println!("Stopping the Runner");
 //!     runner.stop().await;
