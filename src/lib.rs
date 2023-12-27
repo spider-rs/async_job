@@ -65,7 +65,6 @@ use chrono::{DateTime, Duration, Utc};
 pub use cron::Schedule;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
-use std::panic;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -213,13 +212,12 @@ impl Runner {
 
     /// Add jobs into the runner
     ///
-    /// **panics** if you try to push a job onto already started runner
+    /// Does nothing if already running.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, job: Box<dyn Job>) -> Self {
-        if self.running {
-            panic!("Cannot push job onto runner once the runner is started!");
+        if !self.running {
+            self.jobs.push(job);
         }
-        self.jobs.push(job);
         self
     }
 
