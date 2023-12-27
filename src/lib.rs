@@ -14,7 +14,7 @@
 //! use async_job::{Job, Runner, Schedule, async_trait};
 //! use tokio::time::Duration;
 //! use tokio;
-//! 
+//!
 //! struct ExampleJob;
 //!
 //! #[async_trait]
@@ -65,11 +65,11 @@ use chrono::{DateTime, Duration, Utc};
 pub use cron::Schedule;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc, Arc, Mutex,
+    Arc, RwLock,
 };
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 lazy_static! {
@@ -77,7 +77,7 @@ lazy_static! {
     /// same job to run again while its already running
     /// unless you specificly allow the job to run in
     /// parallel with itself
-    pub static ref TRACKER: Mutex<Tracker> = Mutex::new(Tracker::new());
+    pub static ref TRACKER: RwLock<Tracker> = RwLock::new(Tracker::new());
 }
 
 #[async_trait]
@@ -187,7 +187,7 @@ pub struct Runner {
     /// is the task running or not
     pub running: bool,
     /// channel sending message
-    pub tx: Option<mpsc::Sender<Result<(), ()>>>,
+    pub tx: Option<UnboundedSender<Result<(), ()>>>,
     /// tracker to determine crons working
     pub working: Arc<AtomicBool>,
 }
@@ -275,8 +275,14 @@ impl Runner {
 async fn spawn(
     runner: Runner,
     working: Arc<AtomicBool>,
-) -> (Option<JoinHandle<()>>, Option<Sender<Result<(), ()>>>) {
-    let (tx, rx): (Sender<Result<(), ()>>, Receiver<Result<(), ()>>) = mpsc::channel();
+) -> (
+    Option<JoinHandle<()>>,
+    Option<UnboundedSender<Result<(), ()>>>,
+) {
+    let (tx, mut rx): (
+        UnboundedSender<Result<(), ()>>,
+        UnboundedReceiver<Result<(), ()>>,
+    ) = unbounded_channel();
 
     let handler = tokio::spawn(async move {
         let mut jobs = runner.jobs;
@@ -288,12 +294,21 @@ async fn spawn(
             }
 
             for (id, job) in jobs.iter_mut().enumerate() {
-                let no = (id + 1).to_string();
+                let no: String = (id + 1).to_string();
 
                 if job.should_run()
-                    && (job.allow_parallel_runs() || !TRACKER.lock().unwrap().running(&id))
+                    && (job.allow_parallel_runs()
+                        || match TRACKER.read() {
+                            Ok(s) => !s.running(&id),
+                            _ => false,
+                        })
                 {
-                    TRACKER.lock().unwrap().start(&id);
+                    match TRACKER.write() {
+                        Ok(mut s) => {
+                            s.start(&id);
+                        }
+                        _ => (),
+                    }
 
                     let now = Utc::now();
                     debug!(
@@ -301,12 +316,18 @@ async fn spawn(
                         format!("cron-job-thread-{}", no),
                         now.format("%H:%M:%S%.f")
                     );
+
                     working.store(true, Ordering::Relaxed);
 
-                    // keep the work on the same task for now.
                     job.handle().await;
 
-                    working.store(TRACKER.lock().unwrap().stop(&id) != 0, Ordering::Relaxed);
+                    working.store(
+                        match TRACKER.write() {
+                            Ok(mut s) => s.stop(&id) != 0,
+                            _ => false,
+                        },
+                        Ordering::Relaxed,
+                    );
 
                     debug!(
                         "FINISH: {} --- {}",
